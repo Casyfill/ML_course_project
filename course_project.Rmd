@@ -1,0 +1,119 @@
+---
+title: "Practical_Mashine_learning"
+author: "Philipp Kats"
+date: "23 May 2015"
+output: html_document
+---
+
+##1.Setup
+```{r cache = T}
+library(caret)
+library(ggplot2)
+library(corrplot)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+
+set.seed(333) # setting the seed for reproducibility purposes
+
+dir <- '/Users/casy/Dropbox/My_Projects/Coursera/Coursera_ML/course_project/ML_course_project'
+setwd(dir)
+```
+
+##2.Download data
+```{r cache = T}
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "./data/pml-training.csv"
+testFile  <- "./data/pml-testing.csv"
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(trainFile)) {
+  download.file(trainUrl, destfile=trainFile, method="curl")
+}
+if (!file.exists(testFile)) {
+  download.file(testUrl, destfile=testFile, method="curl")
+}
+
+```
+
+##3. Reading data
+```{r cache = T}
+trainRaw <- read.csv("./data/pml-training.csv")
+testRaw <- read.csv("./data/pml-testing.csv")
+dim(trainRaw)
+dim(testRaw)
+
+trainRaw$classe <- as.factor(trainRaw$classe)
+trainRaw$new_window<- as.factor(trainRaw$new_window)
+testRaw$new_window<- as.factor(testRaw$new_window)
+```
+
+##4. Cleaning data
+```{r cache = T}
+sum(complete.cases(trainRaw))
+```
+
+####First, lets get rid of all NA-containing
+```{r cache = T}
+trainRaw <- trainRaw[, colSums(is.na(trainRaw)) == 0] 
+testRaw <- testRaw[, colSums(is.na(testRaw)) == 0]
+```
+####Now remove insignificant columns
+```{r cache = T}
+classe <- trainRaw$classe
+trainRemove <- grepl("^X|timestamp|window", names(trainRaw))
+trainRaw <- trainRaw[, !trainRemove]
+trainCleaned <- trainRaw[, sapply(trainRaw, is.numeric)]
+trainCleaned$classe <- classe
+testRemove <- grepl("^X|timestamp|window", names(testRaw))
+testRaw <- testRaw[, !testRemove]
+testCleaned <- testRaw[, sapply(testRaw, is.numeric)]
+```
+##5. Lets split our training set into pure training and testing sets for validation
+
+```{r cache = T}
+inTrain <- createDataPartition(trainCleaned$classe, p=0.70, list=F)
+trainData <- trainCleaned[inTrain, ]
+testData <- trainCleaned[-inTrain, ]
+```
+
+##6. Now lets model a Random Forest model
+```{r cache = T}
+#Data modelling
+controlRf <- trainControl(method="cv", 5)
+modelRf <- train(classe ~ ., data=trainData, method="rf", trControl=controlRf, ntree=250)
+modelRf
+```
+
+##7.Check model perfomance on validation dataset
+```{r cache = T}
+predictRf <- predict(modelRf, testData)
+
+table(predictRf, testData$classe)
+
+confusionMatrix(testData$classe, predictRf)
+
+accuracy <- postResample(predictRf, testData$classe)
+accuracy
+
+oose <- 1 - as.numeric(confusionMatrix(testData$classe, predictRf)$overall[1])
+oose
+
+```
+##8. Now lets predict classes for the test dataset
+```{r cache = T}
+result <- predict(modelRf, testCleaned[, -length(names(testCleaned))])
+result
+```
+##9. Appendix: Figures
+```{r cache = T}
+corrPlot <- cor(trainData[, -length(names(trainData))])
+corrplot(corrPlot, method="color")
+```
+
+```{r cache = T}
+treeModel <- rpart(classe ~ ., data=trainData, method="class")
+prp(treeModel) 
+```
